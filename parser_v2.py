@@ -4,35 +4,59 @@ from ast_nodes import *
 
 class Parser:
     def __init__(self, text: str) -> None:
-        self.lines: list[str] = text.splitlines()
+        self.raw: str = text
         self.document: str = ""
-        self.pos: int = 0
+        self.idx: int = 0
+        self.new_line: bool = True
         self.conditions: List[Callable[[], bool]] = []
         
     def keep_this_level(self):
         return all(cond() for cond in self.conditions)
-    
         
     def parse(self) -> None:    
         self.document += "<document>\n"
-        self.conditions.append(lambda: self.pos < len(self.lines))
+        self.conditions.append(lambda: self.idx < len(self.raw))
+        
         while self.keep_this_level():
-            heading_match = re.match(r'^(#{1,6})\s+(.*)$', self.lines[self.pos])
-            if heading_match:
-                level = len(heading_match.group(1))
-                s = heading_match.group(2)
-                self.parse_heading(level, s)
-            
-            self.parse_content()
+            if self.new_line and self.raw[self.idx] == '#':
+                self.parse_heading()
+            else:
+                self.parse_content()
         
         self.document += "\n</document>\n"
 
+    def parse_heading(self) -> None:
+        self.new_line = False
+        level: int = 0
+        
+        self.conditions.append(lambda: self.raw[self.idx] == '#')
+        while self.keep_this_level():
+            level += 1
+            self.idx += 1
+        self.conditions.pop()
 
-    def parse_heading(self, level, s) ->None:
-        self.document += f"<heading level={level}>{s}</heading>\n"
-        self.pos += 1
+        if self.raw[self.idx] != ' ':
+            self.document += '#' * level
+            return
+        
+        self.document += f"<heading level={level}>"
+
+        self.conditions.append(lambda: self.raw[self.idx] != '\n')
+        while self.keep_this_level():
+            self.document += self.raw[self.idx]
+            self.idx += 1
+        self.conditions.pop()
+            
+        self.document += "</heading>\n"
+        self.new_line = True
+        self.idx += 1
     
     def parse_content(self) -> None:
+        if self.raw[self.idx] == '\n':
+            self.new_line = True
+            self.idx += 1
+            return
+        
         self.document += "<content>\n"
         self.conditions.append(lambda: self.lines[self.pos].strip() != "")
         
