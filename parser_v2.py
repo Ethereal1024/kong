@@ -1,14 +1,32 @@
 import re
 from typing import List, Iterator, Tuple, Optional, Any, Callable
 from ast_nodes import *
+from abc import ABC, abstractmethod
+from enum import Enum, auto
 
-class Parser:
+class State(Enum):
+    IDLE = auto()
+    HEADING = auto()
+    TABLE = auto()
+    CODEBLK = auto()
+    LISTBLK = auto()
+    TABLEROW = auto()
+    STRONG = auto()
+    EMPHASIS = auto()
+    CODEINLINE = auto()
+    LINK = auto()
+    IMAGE = auto()
+    LATEX = auto()
+
+class DocumentParser:
+    
     def __init__(self, text: str) -> None:
         self.raw: str = text
         self.document: str = ""
         self.idx: int = 0
         self.new_line: bool = True
         self.conditions: List[Callable[[], bool]] = []
+        self.last_state: State = State.IDLE
         
     def keep_this_level(self):
         return all(cond() for cond in self.conditions)
@@ -18,25 +36,26 @@ class Parser:
         self.conditions.append(lambda: self.idx < len(self.raw))
         
         while self.keep_this_level():
-            if self.new_line and self.raw[self.idx] == '#':
+            if (self.new_line and self.raw[self.idx] == '#') or self.last_state == State.HEADING:
                 self.parse_heading()
             else:
                 self.parse_content()
         
         self.document += "\n</document>\n"
 
-    def parse_heading(self) -> None:
+    def parse_heading(self) -> Iterator[None]:
         self.new_line = False
+        self.last_state = State.HEADING
         level: int = 0
         
-        self.conditions.append(lambda: self.raw[self.idx] == '#')
-        while self.keep_this_level():
+        while self.raw[self.idx] == '#':
             level += 1
             self.idx += 1
-        self.conditions.pop()
+            yield
 
         if self.raw[self.idx] != ' ':
             self.document += '#' * level
+            self.last_state = State.IDLE
             return
         
         self.document += f"<heading level={level}>"
@@ -45,13 +64,15 @@ class Parser:
         while self.keep_this_level():
             self.document += self.raw[self.idx]
             self.idx += 1
+            yield
         self.conditions.pop()
             
         self.document += "</heading>\n"
+        self.last_state = State.IDLE
         self.new_line = True
         self.idx += 1
     
-    def parse_content(self) -> None:
+    def parse_content(self) -> Iterator[None]:
         if self.raw[self.idx] == '\n':
             self.new_line = True
             self.idx += 1
@@ -88,6 +109,7 @@ class Parser:
             else:
                 pass
                 # self.parse_paragraph()
+            yield
             
         self.conditions.pop()
         self.pos += 1
